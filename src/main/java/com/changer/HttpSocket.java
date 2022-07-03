@@ -12,6 +12,7 @@ import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.net.URL;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -24,29 +25,45 @@ public class HttpSocket {
     private static final int HTTP_PORT = 80;
 
     private static final String GET_REQUEST_TEMPLATE = """
-            GET %s HTTP/1.1
+            %s %s HTTP/1.1
             Host: %s
-            Connection: close
 
             """;
 
     @SneakyThrows
-    public static List<String> getResponseLines(HttpMethod method, URL url) {
-        List<String> lines;
+    public static HttpResponse getResponse(HttpMethod method, URL url) {
+        HttpResponse response;
         Optional<URL> location = Optional.of(url);
         do {
             try (Socket socket = createHttpSocket(location.get())) {
                 PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream()), true);
-                writer.format(GET_REQUEST_TEMPLATE, url.getFile(), url.getHost());
+                writer.format(GET_REQUEST_TEMPLATE, method, url.getFile(), url.getHost());
 
-                BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-                lines = reader.lines().toList();
-
-                location = parseLocation(lines);
+                response = getResponse(method, socket);
+                location = parseLocation(response.headers());
             }
         } while (location.isPresent());
 
-        return lines;
+        return response;
+    }
+
+    @SneakyThrows
+    private static HttpResponse getResponse(HttpMethod method, Socket socket) {
+        BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+        List<String> headers = reader.lines()
+                                     .takeWhile(line -> !line.isEmpty())
+                                     .toList();
+
+        List<String> body;
+        if (method == HttpMethod.HEAD) {
+            body = Collections.emptyList();
+        } else {
+            body = reader.lines()
+                         .takeWhile(line -> !line.isEmpty() && !Constants.CHUNKS_END_LINE.equals(line))
+                         .toList();
+        }
+
+        return new HttpResponse(headers, body);
     }
 
     private static Optional<URL> parseLocation(List<String> responseLines) {

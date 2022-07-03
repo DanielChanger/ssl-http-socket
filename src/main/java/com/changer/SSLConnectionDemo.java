@@ -31,25 +31,18 @@ public class SSLConnectionDemo {
     private static List<URL> getPhotosUrls() {
         URL photosUrl = new URL(HTTPS_PROTOCOL, HOST, PATH);
 
-        List<String> responseLines = HttpSocket.getResponseLines(HttpMethod.GET, photosUrl);
-        String photosJson = parseJson(responseLines);
+        HttpResponse response = HttpSocket.getResponse(HttpMethod.GET, photosUrl);
+
+        String photosJson = response.body()
+                                    .stream()
+                                    .filter(line -> !isChunkLength(line))
+                                    .collect(Collectors.joining());
 
         return objectMapper.readTree(photosJson)
                            .findValuesAsText(PHOTO_URL_FIELD)
                            .stream()
                            .map(UrlUtils::toUrl)
                            .toList();
-
-    }
-
-    @SneakyThrows
-    private static String parseJson(List<String> responseLines) {
-        return responseLines.stream()
-                            .dropWhile(line -> !line.isEmpty()) // skip headers
-                            .skip(1) // skip first new line
-                            .takeWhile(line -> !line.isEmpty()) // take body
-                            .filter(line -> !isChunkLength(line)) // remove chunks length
-                            .collect(Collectors.joining());
     }
 
     private static Optional<Photo> getLargestPhoto(List<URL> photosUrls) {
@@ -70,14 +63,13 @@ public class SSLConnectionDemo {
 
     @SneakyThrows
     private static long getLength(URL url) {
-        return HttpSocket.getResponseLines(HttpMethod.GET, url).stream()
+        return HttpSocket.getResponse(HttpMethod.HEAD, url)
+                         .headers()
+                         .stream()
                          .filter(line -> line.contains("Content-Length: "))
                          .findFirst()
                          .map(line -> line.substring(line.indexOf(" ")).trim())
                          .map(Long::parseLong)
                          .orElse(0L);
-    }
-
-    private record Photo(URL url, long length) {
     }
 }

@@ -1,5 +1,5 @@
 package com.changer;
 
 public enum HttpMethod {
-    GET
+    HEAD, GET
 }
